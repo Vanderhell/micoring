@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build tests
+        run: cc -std=c99 -Wall -Wextra -Wpedantic -Werror -Iinclude src/mring.c tests/test_all.c -o test_all
+
+      - name: Run tests
+        run: ./test_all

@@ -1,0 +1,46 @@
+# Build outputs
+build/
+dist/
+out/
+bin/
+obj/
+Debug/
+Release/
+
+# Test binaries and temporary artifacts
+test_all
+test_all.exe
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+*.exe
+
+# CMake / Ninja / Make
+CMakeCache.txt
+CMakeFiles/
+cmake-build-*/
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+Makefile.user
+
+# IDEs and editors
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local accidents
+{docs,include,src,tests}/
+git.txt
