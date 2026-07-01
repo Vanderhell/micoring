@@ -1,0 +1,22 @@
+# Troubleshooting
+
+- Invalid or non-power-of-two capacity: `mring_init()` returns `MRING_ERR_INVALID`.
+- Insufficient storage size: `mring_init()` returns `MRING_ERR_SIZE`.
+- `capacity * elem_size` overflow: `mring_init()` returns `MRING_ERR_SIZE`.
+- ABI or config mismatch: rebuild the library and consumer from the same generated `mring_config.h`.
+- Invalid concurrency mode: the public config header fails compilation intentionally.
+- Unsupported SPSC atomic backend: provide user hooks or use a supported compiler backend.
+- Overwrite in concurrent mode: `mring_push_overwrite()` returns `MRING_ERR_UNSUPPORTED`.
+- Null query output parameter: query functions return `MRING_ERR_NULL`.
+- `peek_at` on empty ring: returns `MRING_ERR_EMPTY`.
+- `peek_at` offset too large on non-empty ring: returns `MRING_ERR_SIZE`.
+- Batch partial transfer: the function still returns `MRING_OK`; inspect the transferred count.
+- Typed wrapper mismatch: wrappers return `MRING_ERR_TYPE`.
+- Duplicate wrapper prefix in one translation unit: expect an intentional symbol redefinition error.
+- Removed `mring_ptr_at()`: use copy-based peek APIs instead.
+- `find_package` prefix issues: ensure the install prefix is on `CMAKE_PREFIX_PATH`.
+- Make flag injection: pass `CC`, `CPPFLAGS`, `CFLAGS`, and `LDFLAGS` from the caller environment.
+- Compiler diagnostics differ: compile-fail fixtures match intent, not one exact vendor message.
+- Sanitizer and analyzer tooling may be unavailable on some runners.
+- TSan results are limited to supported host toolchains and the selected mode.
+- ARM cross jobs are compile-only and do not prove ISR behavior on hardware.

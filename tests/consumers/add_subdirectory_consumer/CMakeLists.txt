@@ -1,0 +1,3 @@
+add_executable(micoring_add_subdirectory_consumer main.c)
+target_compile_features(micoring_add_subdirectory_consumer PRIVATE c_std_99)
+target_link_libraries(micoring_add_subdirectory_consumer PRIVATE micoring::micoring)

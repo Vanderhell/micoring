@@ -1,582 +1,497 @@
 /*
- * micoring test suite.
+ * micoring runtime test suite.
  *
- * Build: gcc -std=c99 -Wall -Wextra -I../include ../src/mring.c test_all.c -o test_all
- * Run:   ./test_all
+ * This file is intentionally repository-local and C99-only.
  */
 
+#define MRING_TEST 1
+
 #include "mring.h"
+
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
-/* ── Minimal test framework ────────────────────────────────────────────── */
+typedef int (*test_fn_t)(void);
 
-static int tests_run = 0, tests_passed = 0, tests_failed = 0;
+static int tests_run = 0;
+static int tests_passed = 0;
+static int tests_failed = 0;
 
-#define TEST(name) static void name(void)
-#define RUN_TEST(name) do {                                     \
-    tests_run++;                                                \
-    printf("  %-55s ", #name);                                  \
-    name();                                                     \
-    printf("PASS\n");                                           \
-    tests_passed++;                                             \
-} while (0)
+#define TEST(name) static int name(void)
 
-#define ASSERT_EQ(expected, actual) do {                        \
-    if ((expected) != (actual)) {                               \
-        printf("FAIL\n    %s:%d: expected %d, got %d\n",       \
-               __FILE__, __LINE__, (int)(expected), (int)(actual)); \
-        tests_failed++; return;                                 \
-    }                                                           \
-} while (0)
+#define ASSERT_EQ_INT(expected, actual)                                               \
+    do {                                                                              \
+        int assert_eq_expected_value = (expected);                                    \
+        int assert_eq_actual_value = (actual);                                        \
+        if (assert_eq_expected_value != assert_eq_actual_value) {                     \
+            fprintf(stderr, "%s:%d expected %d got %d\n", __FILE__, __LINE__,         \
+                assert_eq_expected_value, assert_eq_actual_value);                    \
+            return 1;                                                                 \
+        }                                                                             \
+    } while (0)
 
-#define ASSERT_TRUE(expr) do {                                  \
-    if (!(expr)) {                                              \
-        printf("FAIL\n    %s:%d: expected true\n",              \
-               __FILE__, __LINE__);                             \
-        tests_failed++; return;                                 \
-    }                                                           \
-} while (0)
+#define ASSERT_EQ_SIZE(expected, actual)                                              \
+    do {                                                                              \
+        size_t assert_eq_expected_value = (expected);                                 \
+        size_t assert_eq_actual_value = (actual);                                     \
+        if (assert_eq_expected_value != assert_eq_actual_value) {                     \
+            fprintf(stderr, "%s:%d expected %lu got %lu\n", __FILE__, __LINE__,       \
+                (unsigned long)assert_eq_expected_value,                              \
+                (unsigned long)assert_eq_actual_value);                               \
+            return 1;                                                                 \
+        }                                                                             \
+    } while (0)
 
-#define ASSERT_FALSE(expr) do {                                 \
-    if ((expr)) {                                               \
-        printf("FAIL\n    %s:%d: expected false\n",             \
-               __FILE__, __LINE__);                             \
-        tests_failed++; return;                                 \
-    }                                                           \
-} while (0)
+#define ASSERT_TRUE(expr)                                                             \
+    do {                                                                              \
+        int assert_true_value = !!(expr);                                             \
+        if (!assert_true_value) {                                                     \
+            fprintf(stderr, "%s:%d expected true: %s\n", __FILE__, __LINE__, #expr); \
+            return 1;                                                                 \
+        }                                                                             \
+    } while (0)
 
-#define ASSERT_STR_EQ(expected, actual) do {                    \
-    if (strcmp((expected), (actual)) != 0) {                     \
-        printf("FAIL\n    %s:%d: expected \"%s\", got \"%s\"\n",\
-               __FILE__, __LINE__, (expected), (actual));       \
-        tests_failed++; return;                                 \
-    }                                                           \
-} while (0)
+#define ASSERT_FALSE(expr)                                                            \
+    do {                                                                              \
+        int assert_false_value = !!(expr);                                            \
+        if (assert_false_value) {                                                     \
+            fprintf(stderr, "%s:%d expected false: %s\n", __FILE__, __LINE__, #expr);\
+            return 1;                                                                 \
+        }                                                                             \
+    } while (0)
 
-/* ── Typed wrappers for tests ──────────────────────────────────────────── */
+#define ASSERT_STR_EQ(expected, actual)                                               \
+    do {                                                                              \
+        const char *assert_str_expected_value = (expected);                           \
+        const char *assert_str_actual_value = (actual);                               \
+        if (strcmp(assert_str_expected_value, assert_str_actual_value) != 0) {        \
+            fprintf(stderr, "%s:%d expected %s got %s\n", __FILE__, __LINE__,        \
+                assert_str_expected_value, assert_str_actual_value);                  \
+            return 1;                                                                 \
+        }                                                                             \
+    } while (0)
 
-MRING_DEFINE_TYPED(u32ring, uint32_t)
-MRING_DEFINE_TYPED(u8ring, uint8_t)
+static int run_test(const char *name, test_fn_t fn)
+{
+    int status = 0;
 
-/* ── Helpers ───────────────────────────────────────────────────────────── */
-
-#define BUF_CAP 8
-
-static uint8_t storage_u32[BUF_CAP * sizeof(uint32_t)];
-static uint8_t storage_u8[BUF_CAP * sizeof(uint8_t)];
-static mring_t ring;
-
-static void setup_u32(void) {
-    memset(storage_u32, 0, sizeof(storage_u32));
-    mring_init(&ring, storage_u32, BUF_CAP, sizeof(uint32_t));
-}
-
-static void setup_u8(void) {
-    memset(storage_u8, 0, sizeof(storage_u8));
-    mring_init(&ring, storage_u8, BUF_CAP, sizeof(uint8_t));
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Tests: Init
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-TEST(test_init) {
-    setup_u32();
-    ASSERT_EQ(0, (int)mring_count(&ring));
-    ASSERT_EQ(BUF_CAP, (int)mring_capacity(&ring));
-    ASSERT_EQ(BUF_CAP, (int)mring_free(&ring));
-    ASSERT_TRUE(mring_is_empty(&ring));
-    ASSERT_FALSE(mring_is_full(&ring));
-}
-
-TEST(test_init_null) {
-    ASSERT_EQ(MRING_ERR_NULL, mring_init(NULL, storage_u32, BUF_CAP, 4));
-    ASSERT_EQ(MRING_ERR_NULL, mring_init(&ring, NULL, BUF_CAP, 4));
-}
-
-TEST(test_init_not_power_of_2) {
-    ASSERT_EQ(MRING_ERR_INVALID, mring_init(&ring, storage_u32, 5, 4));
-    ASSERT_EQ(MRING_ERR_INVALID, mring_init(&ring, storage_u32, 0, 4));
-}
-
-TEST(test_init_zero_elem_size) {
-    ASSERT_EQ(MRING_ERR_INVALID, mring_init(&ring, storage_u32, BUF_CAP, 0));
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Tests: Push and Pop
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-TEST(test_push_pop_single) {
-    setup_u32();
-    uint32_t val = 42;
-    ASSERT_EQ(MRING_OK, mring_push(&ring, &val));
-    ASSERT_EQ(1, (int)mring_count(&ring));
-    ASSERT_EQ(BUF_CAP - 1, (int)mring_free(&ring));
-
-    uint32_t out = 0;
-    ASSERT_EQ(MRING_OK, mring_pop(&ring, &out));
-    ASSERT_EQ(42, (int)out);
-    ASSERT_EQ(0, (int)mring_count(&ring));
-    ASSERT_TRUE(mring_is_empty(&ring));
-}
-
-TEST(test_push_pop_fifo_order) {
-    setup_u32();
-    for (uint32_t i = 0; i < 5; i++) {
-        mring_push(&ring, &i);
+    tests_run += 1;
+    status = fn();
+    if (status == 0) {
+        tests_passed += 1;
+        printf("PASS %s\n", name);
+    } else {
+        tests_failed += 1;
+        printf("FAIL %s\n", name);
     }
-    ASSERT_EQ(5, (int)mring_count(&ring));
-
-    for (uint32_t i = 0; i < 5; i++) {
-        uint32_t out;
-        mring_pop(&ring, &out);
-        ASSERT_EQ((int)i, (int)out);
-    }
+    return status;
 }
 
-TEST(test_push_full) {
-    setup_u32();
-    uint32_t val = 99;
-    for (int i = 0; i < BUF_CAP; i++) {
-        ASSERT_EQ(MRING_OK, mring_push(&ring, &val));
-    }
-    ASSERT_TRUE(mring_is_full(&ring));
-    ASSERT_EQ(MRING_ERR_FULL, mring_push(&ring, &val));
-}
+#define RUN_TEST(name) run_test(#name, name)
 
-TEST(test_pop_empty) {
-    setup_u32();
-    uint32_t out;
-    ASSERT_EQ(MRING_ERR_EMPTY, mring_pop(&ring, &out));
-}
-
-TEST(test_pop_discard) {
-    setup_u32();
-    uint32_t val = 7;
-    mring_push(&ring, &val);
-    /* Pop with NULL destination — discard */
-    ASSERT_EQ(MRING_OK, mring_pop(&ring, NULL));
-    ASSERT_TRUE(mring_is_empty(&ring));
-}
-
-TEST(test_push_pop_null) {
-    setup_u32();
-    ASSERT_EQ(MRING_ERR_NULL, mring_push(NULL, &(uint32_t){0}));
-    ASSERT_EQ(MRING_ERR_NULL, mring_push(&ring, NULL));
-    ASSERT_EQ(MRING_ERR_NULL, mring_pop(NULL, &(uint32_t){0}));
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Tests: Wraparound
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-TEST(test_wraparound) {
-    setup_u32();
-    /* Fill and drain multiple times to force wraparound */
-    for (int cycle = 0; cycle < 4; cycle++) {
-        for (uint32_t i = 0; i < BUF_CAP; i++) {
-            uint32_t val = (uint32_t)(cycle * 100 + i);
-            ASSERT_EQ(MRING_OK, mring_push(&ring, &val));
-        }
-        ASSERT_TRUE(mring_is_full(&ring));
-
-        for (uint32_t i = 0; i < BUF_CAP; i++) {
-            uint32_t out;
-            ASSERT_EQ(MRING_OK, mring_pop(&ring, &out));
-            ASSERT_EQ((int)(cycle * 100 + i), (int)out);
-        }
-        ASSERT_TRUE(mring_is_empty(&ring));
-    }
-}
-
-TEST(test_interleaved_push_pop) {
-    setup_u32();
-    /* Push 3, pop 2, push 3, pop 2 ... forces index to wrap */
-    uint32_t push_val = 0;
-    uint32_t expected = 0;
-
-    for (int round = 0; round < 10; round++) {
-        for (int i = 0; i < 3; i++) {
-            mring_push(&ring, &push_val);
-            push_val++;
-        }
-        for (int i = 0; i < 2; i++) {
-            uint32_t out;
-            mring_pop(&ring, &out);
-            ASSERT_EQ((int)expected, (int)out);
-            expected++;
-        }
-    }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Tests: Peek
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-TEST(test_peek) {
-    setup_u32();
-    uint32_t val = 55;
-    mring_push(&ring, &val);
-
-    uint32_t out = 0;
-    ASSERT_EQ(MRING_OK, mring_peek(&ring, &out));
-    ASSERT_EQ(55, (int)out);
-    /* Still there */
-    ASSERT_EQ(1, (int)mring_count(&ring));
-}
-
-TEST(test_peek_empty) {
-    setup_u32();
-    uint32_t out;
-    ASSERT_EQ(MRING_ERR_EMPTY, mring_peek(&ring, &out));
-}
-
-TEST(test_peek_at) {
-    setup_u32();
-    for (uint32_t i = 0; i < 5; i++) {
-        mring_push(&ring, &i);
-    }
-
-    uint32_t out;
-    ASSERT_EQ(MRING_OK, mring_peek_at(&ring, 0, &out));
-    ASSERT_EQ(0, (int)out);
-    ASSERT_EQ(MRING_OK, mring_peek_at(&ring, 2, &out));
-    ASSERT_EQ(2, (int)out);
-    ASSERT_EQ(MRING_OK, mring_peek_at(&ring, 4, &out));
-    ASSERT_EQ(4, (int)out);
-}
-
-TEST(test_peek_at_out_of_range) {
-    setup_u32();
-    uint32_t val = 1;
-    mring_push(&ring, &val);
-
-    uint32_t out;
-    ASSERT_EQ(MRING_ERR_SIZE, mring_peek_at(&ring, 1, &out));
-    ASSERT_EQ(MRING_ERR_SIZE, mring_peek_at(&ring, 99, &out));
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Tests: Batch operations
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-TEST(test_push_many) {
-    setup_u32();
-    uint32_t data[] = { 10, 20, 30, 40, 50 };
-    uint32_t pushed = mring_push_many(&ring, data, 5);
-    ASSERT_EQ(5, (int)pushed);
-    ASSERT_EQ(5, (int)mring_count(&ring));
-}
-
-TEST(test_push_many_partial) {
-    setup_u32();
-    /* Fill with 6 first */
-    uint32_t fill[6] = {0};
-    mring_push_many(&ring, fill, 6);
-    ASSERT_EQ(6, (int)mring_count(&ring));
-
-    /* Only 2 slots free */
-    uint32_t data[] = { 100, 200, 300 };
-    uint32_t pushed = mring_push_many(&ring, data, 3);
-    ASSERT_EQ(2, (int)pushed);
-    ASSERT_TRUE(mring_is_full(&ring));
-}
-
-TEST(test_pop_many) {
-    setup_u32();
-    for (uint32_t i = 0; i < 5; i++) {
-        mring_push(&ring, &i);
-    }
-
-    uint32_t out[5] = {0};
-    uint32_t popped = mring_pop_many(&ring, out, 5);
-    ASSERT_EQ(5, (int)popped);
-    for (int i = 0; i < 5; i++) {
-        ASSERT_EQ(i, (int)out[i]);
-    }
-    ASSERT_TRUE(mring_is_empty(&ring));
-}
-
-TEST(test_pop_many_partial) {
-    setup_u32();
-    uint32_t val = 7;
-    mring_push(&ring, &val);
-    mring_push(&ring, &val);
-
-    uint32_t out[4] = {0};
-    uint32_t popped = mring_pop_many(&ring, out, 4);
-    ASSERT_EQ(2, (int)popped);
-}
-
-TEST(test_pop_many_discard) {
-    setup_u32();
-    for (uint32_t i = 0; i < 5; i++) {
-        mring_push(&ring, &i);
-    }
-    uint32_t popped = mring_pop_many(&ring, NULL, 3);
-    ASSERT_EQ(3, (int)popped);
-    ASSERT_EQ(2, (int)mring_count(&ring));
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Tests: Overwrite mode
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-TEST(test_push_overwrite_not_full) {
-    setup_u32();
-    uint32_t val = 42;
-    ASSERT_EQ(MRING_OK, mring_push_overwrite(&ring, &val));
-    ASSERT_EQ(1, (int)mring_count(&ring));
-}
-
-TEST(test_push_overwrite_full) {
-    setup_u32();
-    /* Fill with 0..7 */
-    for (uint32_t i = 0; i < BUF_CAP; i++) {
-        mring_push(&ring, &i);
-    }
-    ASSERT_TRUE(mring_is_full(&ring));
-
-    /* Overwrite with 99 — should drop oldest (0) */
-    uint32_t val = 99;
-    ASSERT_EQ(MRING_OK, mring_push_overwrite(&ring, &val));
-    ASSERT_EQ(BUF_CAP, (int)mring_count(&ring));  /* still full */
-
-    /* Front should now be 1 (0 was dropped) */
-    uint32_t out;
-    mring_peek(&ring, &out);
-    ASSERT_EQ(1, (int)out);
-
-    /* Pop all, last should be 99 */
-    for (int i = 0; i < (int)BUF_CAP - 1; i++) {
-        mring_pop(&ring, &out);
-    }
-    mring_pop(&ring, &out);
-    ASSERT_EQ(99, (int)out);
-}
-
-TEST(test_push_overwrite_continuous) {
-    setup_u32();
-    /* Write 20 values into a size-8 ring with overwrite */
-    for (uint32_t i = 0; i < 20; i++) {
-        mring_push_overwrite(&ring, &i);
-    }
-    /* Should contain the last 8: 12, 13, 14, 15, 16, 17, 18, 19 */
-    ASSERT_EQ(BUF_CAP, (int)mring_count(&ring));
-    for (uint32_t i = 0; i < BUF_CAP; i++) {
-        uint32_t out;
-        mring_pop(&ring, &out);
-        ASSERT_EQ((int)(12 + i), (int)out);
-    }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Tests: Clear
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-TEST(test_clear) {
-    setup_u32();
-    for (uint32_t i = 0; i < 5; i++) {
-        mring_push(&ring, &i);
-    }
-    ASSERT_EQ(5, (int)mring_count(&ring));
-
-    ASSERT_EQ(MRING_OK, mring_clear(&ring));
-    ASSERT_EQ(0, (int)mring_count(&ring));
-    ASSERT_TRUE(mring_is_empty(&ring));
-    ASSERT_EQ(BUF_CAP, (int)mring_free(&ring));
-}
-
-TEST(test_clear_null) {
-    ASSERT_EQ(MRING_ERR_NULL, mring_clear(NULL));
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Tests: Direct access
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-TEST(test_ptr_at) {
-    setup_u32();
-    for (uint32_t i = 0; i < 4; i++) {
-        mring_push(&ring, &i);
-    }
-
-    const uint32_t *p = (const uint32_t *)mring_ptr_at(&ring, 0);
-    ASSERT_TRUE(p != NULL);
-    ASSERT_EQ(0, (int)*p);
-
-    p = (const uint32_t *)mring_ptr_at(&ring, 3);
-    ASSERT_TRUE(p != NULL);
-    ASSERT_EQ(3, (int)*p);
-
-    ASSERT_TRUE(mring_ptr_at(&ring, 4) == NULL);
-    ASSERT_TRUE(mring_ptr_at(NULL, 0) == NULL);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Tests: Typed wrappers
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-TEST(test_typed_u32) {
-    setup_u32();
-    ASSERT_EQ(MRING_OK, u32ring_push(&ring, 123));
-    ASSERT_EQ(MRING_OK, u32ring_push(&ring, 456));
-
-    uint32_t v;
-    ASSERT_EQ(MRING_OK, u32ring_peek(&ring, &v));
-    ASSERT_EQ(123, (int)v);
-
-    ASSERT_EQ(MRING_OK, u32ring_pop(&ring, &v));
-    ASSERT_EQ(123, (int)v);
-    ASSERT_EQ(MRING_OK, u32ring_pop(&ring, &v));
-    ASSERT_EQ(456, (int)v);
-}
-
-TEST(test_typed_u8) {
-    setup_u8();
-    ASSERT_EQ(MRING_OK, u8ring_push(&ring, 0xAA));
-    ASSERT_EQ(MRING_OK, u8ring_push(&ring, 0xBB));
-
-    uint8_t v;
-    ASSERT_EQ(MRING_OK, u8ring_pop(&ring, &v));
-    ASSERT_EQ(0xAA, (int)v);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Tests: Struct elements
- * ═══════════════════════════════════════════════════════════════════════════ */
+MRING_DEFINE_TYPED(u8ring, uint8_t); MRING_DEFINE_TYPED(u32ring, uint32_t)
 
 typedef struct {
     uint16_t sensor_id;
-    float    value;
-    uint32_t timestamp;
+    uint16_t state;
+    uint32_t reading;
 } sample_t;
 
-TEST(test_struct_elements) {
-    static uint8_t sbuf[4 * sizeof(sample_t)];  /* capacity = 4 */
-    mring_t sr;
-    mring_init(&sr, sbuf, 4, sizeof(sample_t));
+MRING_DEFINE_TYPED(sample_ring, sample_t)
 
-    sample_t s1 = { .sensor_id = 1, .value = 23.5f, .timestamp = 1000 };
-    sample_t s2 = { .sensor_id = 2, .value = -10.0f, .timestamp = 2000 };
+static mring_t ring;
+static uint8_t storage_u32[8U * sizeof(uint32_t)];
+static uint8_t storage_u8[8U * sizeof(uint8_t)];
+static uint8_t storage_sample[4U * sizeof(sample_t)];
 
-    mring_push(&sr, &s1);
-    mring_push(&sr, &s2);
-    ASSERT_EQ(2, (int)mring_count(&sr));
+static void setup_ring_u32(void)
+{
+    memset(&ring, 0, sizeof(ring));
+    memset(storage_u32, 0, sizeof(storage_u32));
+    (void)mring_init(&ring, storage_u32, sizeof(storage_u32), 8U, sizeof(uint32_t));
+}
 
+static void setup_ring_u8(void)
+{
+    memset(&ring, 0, sizeof(ring));
+    memset(storage_u8, 0, sizeof(storage_u8));
+    (void)mring_init(&ring, storage_u8, sizeof(storage_u8), 8U, sizeof(uint8_t));
+}
+
+TEST(test_init_exact_storage_size)
+{
+    mring_t local_ring;
+    uint8_t local_storage[8U * sizeof(uint32_t)];
+    ASSERT_EQ_INT(MRING_OK, mring_init(&local_ring, local_storage, sizeof(local_storage), 8U, sizeof(uint32_t)));
+    ASSERT_EQ_SIZE(sizeof(local_storage), local_ring.storage_size);
+    return 0;
+}
+
+TEST(test_init_rejects_zero_capacity)
+{
+    mring_t local_ring;
+    uint8_t local_storage[8U];
+    ASSERT_EQ_INT(MRING_ERR_INVALID, mring_init(&local_ring, local_storage, sizeof(local_storage), 0U, 1U));
+    return 0;
+}
+
+TEST(test_init_rejects_non_power_of_two_capacity)
+{
+    mring_t local_ring;
+    uint8_t local_storage[6U];
+    ASSERT_EQ_INT(MRING_ERR_INVALID, mring_init(&local_ring, local_storage, sizeof(local_storage), 6U, 1U));
+    return 0;
+}
+
+TEST(test_init_rejects_zero_element_size)
+{
+    mring_t local_ring;
+    uint8_t local_storage[8U];
+    ASSERT_EQ_INT(MRING_ERR_SIZE, mring_init(&local_ring, local_storage, sizeof(local_storage), 8U, 0U));
+    return 0;
+}
+
+TEST(test_init_rejects_insufficient_storage)
+{
+    mring_t local_ring;
+    uint8_t local_storage[15U];
+    ASSERT_EQ_INT(MRING_ERR_SIZE, mring_init(&local_ring, local_storage, sizeof(local_storage), 8U, 2U));
+    return 0;
+}
+
+TEST(test_init_rejects_overflow)
+{
+    mring_t local_ring;
+    uint8_t local_storage[8U];
+    ASSERT_EQ_INT(MRING_ERR_SIZE, mring_init(&local_ring, local_storage, sizeof(local_storage), 8U, (SIZE_MAX / 4U) + 1U));
+    return 0;
+}
+
+TEST(test_init_rejects_large_capacity_combo)
+{
+    mring_t local_ring;
+    uint8_t local_storage[8U];
+    ASSERT_EQ_INT(MRING_ERR_SIZE, mring_init(&local_ring, local_storage, sizeof(local_storage), 0x80000000U, 2U));
+    return 0;
+}
+
+TEST(test_init_rejects_overlapping_ring_and_storage)
+{
+    union {
+        mring_t ring_value;
+        uint8_t bytes[sizeof(mring_t) + 64U];
+    } overlap;
+    ASSERT_EQ_INT(MRING_ERR_INVALID, mring_init(&overlap.ring_value, overlap.bytes, sizeof(overlap.bytes), 8U, 4U));
+    return 0;
+}
+
+TEST(test_capacity_one)
+{
+    mring_t local_ring;
+    uint32_t value = 11U;
+    uint32_t out = 0U;
+    uint8_t local_storage[sizeof(uint32_t)];
+    bool full = false;
+
+    ASSERT_EQ_INT(MRING_OK, mring_init(&local_ring, local_storage, sizeof(local_storage), 1U, sizeof(uint32_t)));
+    ASSERT_EQ_INT(MRING_OK, mring_push(&local_ring, &value));
+    ASSERT_EQ_INT(MRING_OK, mring_is_full(&local_ring, &full));
+    ASSERT_TRUE(full);
+    ASSERT_EQ_INT(MRING_ERR_FULL, mring_push(&local_ring, &value));
+    ASSERT_EQ_INT(MRING_OK, mring_pop(&local_ring, &out));
+    ASSERT_EQ_INT(11, (int)out);
+    return 0;
+}
+
+TEST(test_push_pop_fifo)
+{
+    uint32_t value = 0U;
+    uint32_t out = 0U;
+    setup_ring_u32();
+    for (value = 0U; value < 8U; ++value) {
+        ASSERT_EQ_INT(MRING_OK, mring_push(&ring, &value));
+    }
+    for (value = 0U; value < 8U; ++value) {
+        ASSERT_EQ_INT(MRING_OK, mring_pop(&ring, &out));
+        ASSERT_EQ_INT((int)value, (int)out);
+    }
+    return 0;
+}
+
+TEST(test_single_element_same_address_copy)
+{
+    uint32_t value = 7U;
+    setup_ring_u32();
+    ASSERT_EQ_INT(MRING_OK, mring_push(&ring, &value));
+    ASSERT_EQ_INT(MRING_OK, mring_peek(&ring, storage_u32));
+    ASSERT_EQ_INT(MRING_OK, mring_pop(&ring, storage_u32));
+    return 0;
+}
+
+TEST(test_push_pop_null_arguments)
+{
+    uint32_t value = 0U;
+    setup_ring_u32();
+    ASSERT_EQ_INT(MRING_ERR_NULL, mring_push(NULL, &value));
+    ASSERT_EQ_INT(MRING_ERR_NULL, mring_push(&ring, NULL));
+    ASSERT_EQ_INT(MRING_ERR_NULL, mring_pop(NULL, &value));
+    ASSERT_EQ_INT(MRING_ERR_NULL, mring_peek(NULL, &value));
+    ASSERT_EQ_INT(MRING_ERR_NULL, mring_peek(&ring, NULL));
+    return 0;
+}
+
+TEST(test_peek_at_contracts)
+{
+    uint32_t value = 17U;
+    uint32_t out = 0U;
+    setup_ring_u32();
+    ASSERT_EQ_INT(MRING_ERR_EMPTY, mring_peek_at(&ring, 0U, &out));
+    ASSERT_EQ_INT(MRING_ERR_NULL, mring_peek_at(NULL, 0U, &out));
+    ASSERT_EQ_INT(MRING_ERR_NULL, mring_peek_at(&ring, 0U, NULL));
+    ASSERT_EQ_INT(MRING_OK, mring_push(&ring, &value));
+    ASSERT_EQ_INT(MRING_ERR_SIZE, mring_peek_at(&ring, 1U, &out));
+    return 0;
+}
+
+TEST(test_typed_wrapper_mismatch_u8_vs_u32)
+{
+    uint8_t out = 0U;
+    setup_ring_u32();
+    ASSERT_EQ_INT(MRING_ERR_TYPE, u8ring_push(&ring, 1U));
+    ASSERT_EQ_INT(MRING_ERR_TYPE, u8ring_pop(&ring, &out));
+    ASSERT_EQ_INT(MRING_ERR_TYPE, u8ring_peek(&ring, &out));
+    return 0;
+}
+
+TEST(test_typed_wrapper_mismatch_u32_vs_u8)
+{
+    uint32_t out = 0U;
+    setup_ring_u8();
+    ASSERT_EQ_INT(MRING_ERR_TYPE, u32ring_push(&ring, 1U));
+    ASSERT_EQ_INT(MRING_ERR_TYPE, u32ring_pop(&ring, &out));
+    ASSERT_EQ_INT(MRING_ERR_TYPE, u32ring_peek(&ring, &out));
+    return 0;
+}
+
+TEST(test_typed_wrapper_scalar_match)
+{
+    uint32_t out = 0U;
+    setup_ring_u32();
+    ASSERT_EQ_INT(MRING_OK, u32ring_push(&ring, 3U));
+    ASSERT_EQ_INT(MRING_OK, u32ring_pop(&ring, &out));
+    ASSERT_EQ_INT(3, (int)out);
+    return 0;
+}
+
+TEST(test_typed_wrapper_struct_match)
+{
+    mring_t local_ring;
+    sample_t sample = { 1U, 2U, 3U };
     sample_t out;
-    mring_pop(&sr, &out);
-    ASSERT_EQ(1, out.sensor_id);
-    ASSERT_EQ(1000, (int)out.timestamp);
 
-    mring_pop(&sr, &out);
-    ASSERT_EQ(2, out.sensor_id);
+    memset(storage_sample, 0, sizeof(storage_sample));
+    ASSERT_EQ_INT(MRING_OK, mring_init(&local_ring, storage_sample, sizeof(storage_sample), 4U, sizeof(sample_t)));
+    ASSERT_EQ_INT(MRING_OK, sample_ring_push(&local_ring, sample));
+    ASSERT_EQ_INT(MRING_OK, sample_ring_pop(&local_ring, &out));
+    ASSERT_EQ_INT(1, (int)out.sensor_id);
+    ASSERT_EQ_INT(3, (int)out.reading);
+    return 0;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * Tests: Null safety and edge cases
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-TEST(test_query_null) {
-    ASSERT_EQ(0, (int)mring_count(NULL));
-    ASSERT_EQ(0, (int)mring_free(NULL));
-    ASSERT_EQ(0, (int)mring_capacity(NULL));
-    ASSERT_TRUE(mring_is_empty(NULL));
-    ASSERT_TRUE(mring_is_full(NULL));
+TEST(test_overwrite_supported_in_single_context)
+{
+    uint32_t value = 0U;
+    uint32_t out = 0U;
+    setup_ring_u32();
+    for (value = 0U; value < 8U; ++value) {
+        ASSERT_EQ_INT(MRING_OK, mring_push(&ring, &value));
+    }
+    value = 99U;
+    ASSERT_EQ_INT(MRING_OK, mring_push_overwrite(&ring, &value));
+    ASSERT_EQ_INT(MRING_OK, mring_pop(&ring, &out));
+    ASSERT_EQ_INT(1, (int)out);
+    return 0;
 }
 
-TEST(test_err_str) {
-    ASSERT_STR_EQ("ok",            mring_err_str(MRING_OK));
-    ASSERT_STR_EQ("buffer full",   mring_err_str(MRING_ERR_FULL));
-    ASSERT_STR_EQ("buffer empty",  mring_err_str(MRING_ERR_EMPTY));
-    ASSERT_STR_EQ("invalid config",mring_err_str(MRING_ERR_INVALID));
-    ASSERT_STR_EQ("unknown error", mring_err_str((mring_err_t)99));
+TEST(test_batch_zero_partial_full_and_empty)
+{
+    uint32_t input[5] = { 10U, 20U, 30U, 40U, 50U };
+    uint32_t output[5] = { 0U, 0U, 0U, 0U, 0U };
+    size_t transferred = 99U;
+
+    setup_ring_u32();
+    ASSERT_EQ_INT(MRING_OK, mring_push_many(&ring, input, 0U, &transferred));
+    ASSERT_EQ_SIZE(0U, transferred);
+    ASSERT_EQ_INT(MRING_OK, mring_push_many(&ring, input, 5U, &transferred));
+    ASSERT_EQ_SIZE(5U, transferred);
+    ASSERT_EQ_INT(MRING_OK, mring_push_many(&ring, input, 5U, &transferred));
+    ASSERT_EQ_SIZE(3U, transferred);
+    ASSERT_EQ_INT(MRING_OK, mring_pop_many(&ring, output, 5U, &transferred));
+    ASSERT_EQ_SIZE(5U, transferred);
+    ASSERT_EQ_INT(10, (int)output[0]);
+    ASSERT_EQ_INT(MRING_OK, mring_pop_many(&ring, output, 5U, &transferred));
+    ASSERT_EQ_SIZE(3U, transferred);
+    ASSERT_EQ_INT(MRING_OK, mring_pop_many(&ring, output, 5U, &transferred));
+    ASSERT_EQ_SIZE(0U, transferred);
+    return 0;
 }
 
-TEST(test_capacity_1) {
-    uint8_t tiny[sizeof(uint32_t)];
-    mring_t tr;
-    mring_init(&tr, tiny, 1, sizeof(uint32_t));
-    ASSERT_EQ(1, (int)mring_capacity(&tr));
+TEST(test_batch_discard_and_overlap_rejection)
+{
+    uint32_t input[4] = { 1U, 2U, 3U, 4U };
+    size_t transferred = 0U;
 
-    uint32_t val = 77;
-    ASSERT_EQ(MRING_OK, mring_push(&tr, &val));
-    ASSERT_TRUE(mring_is_full(&tr));
-    ASSERT_EQ(MRING_ERR_FULL, mring_push(&tr, &val));
-
-    uint32_t out;
-    ASSERT_EQ(MRING_OK, mring_pop(&tr, &out));
-    ASSERT_EQ(77, (int)out);
-    ASSERT_TRUE(mring_is_empty(&tr));
+    setup_ring_u32();
+    ASSERT_EQ_INT(MRING_OK, mring_push_many(&ring, input, 4U, &transferred));
+    ASSERT_EQ_SIZE(4U, transferred);
+    ASSERT_EQ_INT(MRING_OK, mring_pop_many(&ring, NULL, 2U, &transferred));
+    ASSERT_EQ_SIZE(2U, transferred);
+    ASSERT_EQ_INT(MRING_ERR_INVALID, mring_push_many(&ring, storage_u32, 1U, &transferred));
+    ASSERT_EQ_INT(MRING_ERR_INVALID, mring_pop_many(&ring, storage_u32, 1U, &transferred));
+    return 0;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * Main
- * ═══════════════════════════════════════════════════════════════════════════ */
+TEST(test_query_null_handling)
+{
+    uint32_t count = 0U;
+    size_t elem_size = 0U;
+    bool flag = false;
 
-int main(void) {
-    printf("\n=== micoring test suite ===\n\n");
+    setup_ring_u32();
+    ASSERT_EQ_INT(MRING_ERR_NULL, mring_capacity(NULL, &count));
+    ASSERT_EQ_INT(MRING_ERR_NULL, mring_capacity(&ring, NULL));
+    ASSERT_EQ_INT(MRING_ERR_NULL, mring_element_size(NULL, &elem_size));
+    ASSERT_EQ_INT(MRING_ERR_NULL, mring_count(NULL, &count));
+    ASSERT_EQ_INT(MRING_ERR_NULL, mring_free(NULL, &count));
+    ASSERT_EQ_INT(MRING_ERR_NULL, mring_is_empty(NULL, &flag));
+    ASSERT_EQ_INT(MRING_ERR_NULL, mring_is_full(NULL, &flag));
+    return 0;
+}
 
-    printf("[Init]\n");
-    RUN_TEST(test_init);
-    RUN_TEST(test_init_null);
-    RUN_TEST(test_init_not_power_of_2);
-    RUN_TEST(test_init_zero_elem_size);
+TEST(test_query_values)
+{
+    uint32_t count = 0U;
+    uint32_t free_slots = 0U;
+    uint32_t capacity = 0U;
+    size_t elem_size = 0U;
+    bool flag = false;
+    uint32_t value = 7U;
 
-    printf("\n[Push & Pop]\n");
-    RUN_TEST(test_push_pop_single);
-    RUN_TEST(test_push_pop_fifo_order);
-    RUN_TEST(test_push_full);
-    RUN_TEST(test_pop_empty);
-    RUN_TEST(test_pop_discard);
-    RUN_TEST(test_push_pop_null);
+    setup_ring_u32();
+    ASSERT_EQ_INT(MRING_OK, mring_push(&ring, &value));
+    ASSERT_EQ_INT(MRING_OK, mring_count(&ring, &count));
+    ASSERT_EQ_INT(MRING_OK, mring_free(&ring, &free_slots));
+    ASSERT_EQ_INT(MRING_OK, mring_capacity(&ring, &capacity));
+    ASSERT_EQ_INT(MRING_OK, mring_element_size(&ring, &elem_size));
+    ASSERT_EQ_INT(MRING_OK, mring_is_empty(&ring, &flag));
+    ASSERT_EQ_INT(1, (int)count);
+    ASSERT_EQ_INT(7, (int)free_slots);
+    ASSERT_EQ_INT(8, (int)capacity);
+    ASSERT_EQ_SIZE(sizeof(uint32_t), elem_size);
+    ASSERT_FALSE(flag);
+    return 0;
+}
 
-    printf("\n[Wraparound]\n");
-    RUN_TEST(test_wraparound);
-    RUN_TEST(test_interleaved_push_pop);
+TEST(test_wrap_push_pop_near_uint32_max)
+{
+    uint32_t value = 0U;
+    uint32_t out = 0U;
+    setup_ring_u32();
+    ASSERT_EQ_INT(MRING_OK, mring_test_set_counters(&ring, UINT32_MAX - 3U, UINT32_MAX - 3U));
+    for (value = 0U; value < 4U; ++value) {
+        ASSERT_EQ_INT(MRING_OK, mring_push(&ring, &value));
+    }
+    for (value = 0U; value < 4U; ++value) {
+        ASSERT_EQ_INT(MRING_OK, mring_pop(&ring, &out));
+        ASSERT_EQ_INT((int)value, (int)out);
+    }
+    return 0;
+}
 
-    printf("\n[Peek]\n");
-    RUN_TEST(test_peek);
-    RUN_TEST(test_peek_empty);
-    RUN_TEST(test_peek_at);
-    RUN_TEST(test_peek_at_out_of_range);
+TEST(test_wrap_full_empty_and_batch)
+{
+    uint32_t input[4] = { 8U, 9U, 10U, 11U };
+    uint32_t output[4] = { 0U, 0U, 0U, 0U };
+    size_t transferred = 0U;
+    bool full = false;
+    bool empty = false;
 
-    printf("\n[Batch Operations]\n");
-    RUN_TEST(test_push_many);
-    RUN_TEST(test_push_many_partial);
-    RUN_TEST(test_pop_many);
-    RUN_TEST(test_pop_many_partial);
-    RUN_TEST(test_pop_many_discard);
+    setup_ring_u32();
+    ASSERT_EQ_INT(MRING_OK, mring_test_set_counters(&ring, UINT32_MAX - 1U, UINT32_MAX - 1U));
+    ASSERT_EQ_INT(MRING_OK, mring_push_many(&ring, input, 4U, &transferred));
+    ASSERT_EQ_SIZE(4U, transferred);
+    ASSERT_EQ_INT(MRING_OK, mring_is_full(&ring, &full));
+    ASSERT_TRUE(full);
+    ASSERT_EQ_INT(MRING_OK, mring_pop_many(&ring, output, 4U, &transferred));
+    ASSERT_EQ_SIZE(4U, transferred);
+    ASSERT_EQ_INT(MRING_OK, mring_is_empty(&ring, &empty));
+    ASSERT_TRUE(empty);
+    ASSERT_EQ_INT(8, (int)output[0]);
+    ASSERT_EQ_INT(11, (int)output[3]);
+    return 0;
+}
 
-    printf("\n[Overwrite Mode]\n");
-    RUN_TEST(test_push_overwrite_not_full);
-    RUN_TEST(test_push_overwrite_full);
-    RUN_TEST(test_push_overwrite_continuous);
+TEST(test_repeated_fill_drain)
+{
+    uint32_t cycle = 0U;
+    uint32_t value = 0U;
+    uint32_t out = 0U;
 
-    printf("\n[Clear]\n");
-    RUN_TEST(test_clear);
-    RUN_TEST(test_clear_null);
+    setup_ring_u32();
+    for (cycle = 0U; cycle < 32U; ++cycle) {
+        for (value = 0U; value < 8U; ++value) {
+            uint32_t payload = (cycle * 100U) + value;
+            ASSERT_EQ_INT(MRING_OK, mring_push(&ring, &payload));
+        }
+        for (value = 0U; value < 8U; ++value) {
+            ASSERT_EQ_INT(MRING_OK, mring_pop(&ring, &out));
+            ASSERT_EQ_INT((int)((cycle * 100U) + value), (int)out);
+        }
+    }
+    return 0;
+}
 
-    printf("\n[Direct Access]\n");
-    RUN_TEST(test_ptr_at);
+TEST(test_err_strings)
+{
+    ASSERT_STR_EQ("ok", mring_err_str(MRING_OK));
+    ASSERT_STR_EQ("element type mismatch", mring_err_str(MRING_ERR_TYPE));
+    ASSERT_STR_EQ("unsupported operation", mring_err_str(MRING_ERR_UNSUPPORTED));
+    ASSERT_STR_EQ("unknown error", mring_err_str((mring_err_t)1234));
+    return 0;
+}
 
-    printf("\n[Typed Wrappers]\n");
-    RUN_TEST(test_typed_u32);
-    RUN_TEST(test_typed_u8);
+int main(void)
+{
+    int failed = 0;
 
-    printf("\n[Struct Elements]\n");
-    RUN_TEST(test_struct_elements);
+    failed |= RUN_TEST(test_init_exact_storage_size);
+    failed |= RUN_TEST(test_init_rejects_zero_capacity);
+    failed |= RUN_TEST(test_init_rejects_non_power_of_two_capacity);
+    failed |= RUN_TEST(test_init_rejects_zero_element_size);
+    failed |= RUN_TEST(test_init_rejects_insufficient_storage);
+    failed |= RUN_TEST(test_init_rejects_overflow);
+    failed |= RUN_TEST(test_init_rejects_large_capacity_combo);
+    failed |= RUN_TEST(test_init_rejects_overlapping_ring_and_storage);
+    failed |= RUN_TEST(test_capacity_one);
+    failed |= RUN_TEST(test_push_pop_fifo);
+    failed |= RUN_TEST(test_single_element_same_address_copy);
+    failed |= RUN_TEST(test_push_pop_null_arguments);
+    failed |= RUN_TEST(test_peek_at_contracts);
+    failed |= RUN_TEST(test_typed_wrapper_mismatch_u8_vs_u32);
+    failed |= RUN_TEST(test_typed_wrapper_mismatch_u32_vs_u8);
+    failed |= RUN_TEST(test_typed_wrapper_scalar_match);
+    failed |= RUN_TEST(test_typed_wrapper_struct_match);
+    failed |= RUN_TEST(test_overwrite_supported_in_single_context);
+    failed |= RUN_TEST(test_batch_zero_partial_full_and_empty);
+    failed |= RUN_TEST(test_batch_discard_and_overlap_rejection);
+    failed |= RUN_TEST(test_query_null_handling);
+    failed |= RUN_TEST(test_query_values);
+    failed |= RUN_TEST(test_wrap_push_pop_near_uint32_max);
+    failed |= RUN_TEST(test_wrap_full_empty_and_batch);
+    failed |= RUN_TEST(test_repeated_fill_drain);
+    failed |= RUN_TEST(test_err_strings);
 
-    printf("\n[Edge Cases]\n");
-    RUN_TEST(test_query_null);
-    RUN_TEST(test_err_str);
-    RUN_TEST(test_capacity_1);
-
-    printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
-    if (tests_failed > 0) printf(", %d FAILED", tests_failed);
-    printf(" ===\n\n");
-
-    return tests_failed > 0 ? 1 : 0;
+    printf("SUMMARY %d run %d passed %d failed\n", tests_run, tests_passed, tests_failed);
+    return failed ? 1 : 0;
 }

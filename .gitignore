@@ -44,3 +44,4 @@ desktop.ini
 # Local accidents
 {docs,include,src,tests}/
 git.txt
+/prompts

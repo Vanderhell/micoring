@@ -1,24 +1,16 @@
-# Contributing to micoring
+# Contributing
 
-Contributions are welcome in the following areas:
+Contributions must preserve these project rules:
 
-- bug fixes
-- documentation improvements
-- portability updates
-- test coverage
-- performance tuning that preserves API clarity
+- C99 is the minimum supported C language level.
+- Capacity is fixed at initialization time.
+- Storage is caller-owned.
+- Dynamic allocation is out of scope.
+- Hidden global mutable state is out of scope.
+- OS and RTOS dependencies are out of scope.
+- Public pointer-borrow APIs are out of scope.
+- Tests must not be weakened or removed to make failures disappear.
+- Compile-fail tests must not be removed.
+- Tags and releases are only created when explicitly requested.
 
-Out of scope:
-
-- dynamic allocation support
-- multi-producer or multi-consumer semantics without explicit synchronization
-- platform-specific behavior that weakens portability
-
-## Workflow
-
-1. Open an issue or describe the problem clearly in a pull request.
-2. Fork the repository and create a focused branch.
-3. Add or update tests when behavior changes.
-4. Keep the public API and documentation in sync with the implementation.
-
-By contributing, you agree that your changes may be distributed under the MIT License.
+When behavior changes, update code, tests, and docs together.

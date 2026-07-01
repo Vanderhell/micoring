@@ -1,17 +1,14 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to this project are documented here.
 
-## [1.0.0] - 2026-03-20
+## Unreleased
 
-### Added
+### Changed
 
-- Generic ring buffer with configurable element size
-- Power-of-2 capacity with bitmask wrapping
-- Lock-free SPSC operation
-- Push, pop, peek, and `peek_at` operations
-- Batch `push_many` and `pop_many`
-- Overwrite mode via `mring_push_overwrite`
-- Direct pointer access with `mring_ptr_at`
-- Typed wrapper macros through `MRING_DEFINE_TYPED`
-- Test suite covering wraparound, batch, overwrite, structs, and edge cases
+- Replaced unsized initialization with validated sized initialization.
+- Introduced generated public configuration headers for concurrency mode selection.
+- Normalized query and batch APIs to return status plus output values.
+- Removed the public direct pointer-borrow API.
+- Added package metadata, consumer examples, runtime negative tests, and compile-fail fixtures.
+- Updated repository documentation, verification notes, and tag-based release workflow.

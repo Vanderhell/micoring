@@ -1,48 +1,25 @@
-# Design Rationale
+# Design
 
-## 1. Power-of-2 Capacity
+## Fixed-capacity storage
 
-Decision: capacity must be a power of 2.
+The library uses caller-owned fixed storage and never allocates dynamically.
 
-Why: index wrapping becomes `index & (capacity - 1)` instead of modulo. That is
-cheap on small MCUs and keeps the implementation simple and predictable.
+## Monotonic counters
 
-Tradeoff: some requested capacities need to be rounded up.
+`head` and `tail` are monotonic `uint32_t` counters. Occupancy is derived from unsigned subtraction.
 
-## 2. Monotonic Head And Tail
+## Copy-based API
 
-Decision: `head` and `tail` are monotonic `uint32_t` counters.
+The public API exposes copy operations only. Direct typed pointer borrowing was removed because it
+cannot provide a safe general contract for alignment, effective type, overwrite lifetime, or
+concurrent publication.
 
-Why: this avoids the classic full-vs-empty ambiguity and makes count tracking
-straightforward through unsigned subtraction.
+## Concurrency split
 
-Tradeoff: counters eventually wrap, but unsigned arithmetic keeps the logic
-correct for normal operating ranges.
+The default build is single-context. Optional atomic SPSC mode uses acquire/release publication on
+fixed-width counters without exposing `_Atomic` in the public ABI.
 
-## 3. Volatile Counters For SPSC
+## Failure model
 
-Decision: `head` and `tail` are `volatile uint32_t`.
-
-Why: on common embedded targets such as Cortex-M, aligned 32-bit reads and
-writes are atomic in practice for this single-writer/single-reader pattern.
-
-Tradeoff: this is not a general-purpose lock-free primitive for arbitrary
-desktop multithreading models.
-
-## 4. memcpy-Based Element Access
-
-Decision: elements are copied with `memcpy`.
-
-Why: the library stays generic, alignment-safe, and correct for arbitrary fixed
-element types.
-
-Tradeoff: large structs cost more to copy than pointer-based queues.
-
-## 5. Separate Overwrite API
-
-Decision: overwrite behavior is exposed as `mring_push_overwrite`.
-
-Why: standard push stays branch-light and the caller chooses overwrite semantics
-explicitly at the call site.
-
-Tradeoff: the API surface is slightly larger.
+Errors are returned synchronously. The library does not attempt cleanup or recovery after abnormal
+termination.

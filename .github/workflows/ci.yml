@@ -8,15 +8,34 @@ on:
   pull_request:
 
 jobs:
-  test:
+  linux-matrix:
     runs-on: ubuntu-latest
-
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        standard: [c99, c11]
+        concurrency: [single-context, spsc-atomic]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+      - name: Select compiler
+        run: |
+          echo "CC=${{ matrix.compiler }}" >> "$GITHUB_ENV"
+          echo "CXX=${{ matrix.compiler == 'clang' && 'clang++' || 'g++' }}" >> "$GITHUB_ENV"
+      - name: Configure
+        run: cmake -S . -B build -DMRING_BUILD_TESTS=ON -DMRING_CONCURRENCY_MODE=${{ matrix.concurrency }} -DCMAKE_C_STANDARD=${{ matrix.standard }}
+      - name: Build
+        run: cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
 
-      - name: Build tests
-        run: cc -std=c99 -Wall -Wextra -Wpedantic -Werror -Iinclude src/mring.c tests/test_all.c -o test_all
-
-      - name: Run tests
-        run: ./test_all
+  windows-msvc:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+      - name: Configure
+        run: cmake -S . -B build -DMRING_BUILD_TESTS=ON -DMRING_CONCURRENCY_MODE=single-context
+      - name: Build
+        run: cmake --build build --config Release

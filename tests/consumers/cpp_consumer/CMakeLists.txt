@@ -1,0 +1,3 @@
+add_executable(micoring_cpp_consumer main.cpp)
+target_compile_features(micoring_cpp_consumer PRIVATE cxx_std_11)
+target_link_libraries(micoring_cpp_consumer PRIVATE micoring::micoring)
