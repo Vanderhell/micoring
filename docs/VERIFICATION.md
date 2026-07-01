@@ -1,11 +1,13 @@
 # Verification
 
-Current repository state: local workspace based on commit `97bf71d06d14b7fcb4463fe05723dc88349998c2`.
+Current repository state: local workspace based on commit `b9681c735c0fda3ebb4598e7aaf130cb54fa177d`.
 
 ## Verified in this session
 
 - Repository structure and tracked files were inspected locally.
 - Public API, tests, build files, workflows, and docs were updated to match the requested contracts.
+- GitHub Actions build and test jobs passed after the CI and test fixes.
+- Tag-based release workflow exists at `.github/workflows/release.yml`.
 
 ## Not Verified
 
@@ -15,9 +17,7 @@ Current repository state: local workspace based on commit `97bf71d06d14b7fcb4463
 - No static analyzers were run.
 - No install consumer was executed.
 - No Cortex-M hardware or ISR execution was exercised.
-- No GitHub Actions run was observed.
 
 ## Release Blockers
 
-- Manual build and test audit still required.
-- Compile-fail fixtures and CI workflow behavior still require execution proof.
+- None identified from the current documented CI state.
