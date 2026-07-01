@@ -411,24 +411,24 @@ TEST(test_wrap_push_pop_near_uint32_max)
 
 TEST(test_wrap_full_empty_and_batch)
 {
-    uint32_t input[4] = { 8U, 9U, 10U, 11U };
-    uint32_t output[4] = { 0U, 0U, 0U, 0U };
+    uint32_t input[8] = { 8U, 9U, 10U, 11U, 12U, 13U, 14U, 15U };
+    uint32_t output[8] = { 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U };
     size_t transferred = 0U;
     bool full = false;
     bool empty = false;
 
     setup_ring_u32();
     ASSERT_EQ_INT(MRING_OK, mring_test_set_counters(&ring, UINT32_MAX - 1U, UINT32_MAX - 1U));
-    ASSERT_EQ_INT(MRING_OK, mring_push_many(&ring, input, 4U, &transferred));
-    ASSERT_EQ_SIZE(4U, transferred);
+    ASSERT_EQ_INT(MRING_OK, mring_push_many(&ring, input, 8U, &transferred));
+    ASSERT_EQ_SIZE(8U, transferred);
     ASSERT_EQ_INT(MRING_OK, mring_is_full(&ring, &full));
     ASSERT_TRUE(full);
-    ASSERT_EQ_INT(MRING_OK, mring_pop_many(&ring, output, 4U, &transferred));
-    ASSERT_EQ_SIZE(4U, transferred);
+    ASSERT_EQ_INT(MRING_OK, mring_pop_many(&ring, output, 8U, &transferred));
+    ASSERT_EQ_SIZE(8U, transferred);
     ASSERT_EQ_INT(MRING_OK, mring_is_empty(&ring, &empty));
     ASSERT_TRUE(empty);
     ASSERT_EQ_INT(8, (int)output[0]);
-    ASSERT_EQ_INT(11, (int)output[3]);
+    ASSERT_EQ_INT(15, (int)output[7]);
     return 0;
 }
 

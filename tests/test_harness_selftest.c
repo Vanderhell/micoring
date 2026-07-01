@@ -63,5 +63,9 @@ int main(void)
         fprintf(stderr, "expected side_effect_counter == 2 got %d\n", side_effect_counter);
         return 1;
     }
-    return status ? 1 : 0;
+    if (status == 0) {
+        fprintf(stderr, "expected at least one inner test failure\n");
+        return 1;
+    }
+    return 0;
 }
