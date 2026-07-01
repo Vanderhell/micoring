@@ -1,7 +1,9 @@
-add_executable(micoring_test_all test_all.c)
+add_executable(micoring_test_all ../src/mring.c test_all.c)
 target_compile_features(micoring_test_all PRIVATE c_std_99)
 target_compile_definitions(micoring_test_all PRIVATE MRING_TEST=1)
-target_link_libraries(micoring_test_all PRIVATE micoring)
+target_include_directories(micoring_test_all PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_BINARY_DIR}/generated/include)
 
 add_executable(micoring_test_harness_selftest test_harness_selftest.c)
 target_compile_features(micoring_test_harness_selftest PRIVATE c_std_99)

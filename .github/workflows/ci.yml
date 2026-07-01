@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         compiler: [gcc, clang]
-        standard: [c99, c11]
+        standard: [99, 11]
         concurrency: [single-context, spsc-atomic]
     steps:
       - name: Checkout
